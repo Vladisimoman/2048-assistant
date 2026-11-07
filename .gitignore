@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+
+# Debug images written at runtime
+debug_cells/
+
+# Template images built at runtime
+digit_templates/
