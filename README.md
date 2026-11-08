@@ -1,123 +1,81 @@
-# 2048 Assistant — підказка ходів у реальному часі
+# 2048 Assistant: real-time move advisor and autoplayer
 
-Програма читає екран ноутбука (область із грою, виведеною через "Зв'язок зі
-смартфоном" у Windows), розпізнає поле 4×4 і показує рекомендований хід
-у маленькому напівпрозорому віконці. Сама нічого не натискає — тиснеш ти.
-Додатково логує появу нових плиток (2/4) у CSV-файл для аналізу.
+A desktop tool that reads a live 2048 board from the screen, recognizes the 4×4 grid and shows the best next move in a small always-on-top overlay. It can also play on its own (F9) and logs every new tile (2 or 4) to a CSV file for analysis.
 
-## 1. Встановлення
+It was built for 2048 running on an Android phone mirrored to Windows through Phone Link, but it works with any 2048 board visible on screen, including browser versions.
 
-### 1.1 Python-залежності
+## How it works
+
+1. **Screen capture** (`mss`) grabs only the calibrated board region.
+2. **Board recognition** (`board_reader.py`, `templates.py`): each cell is classified as empty or not, and digits are read with OpenCV template matching. Tesseract OCR is used only for the first few occurrences of each new value, after which the cell image becomes a template.
+3. **Solver** (`solver.py`): Expectimax search. Player moves are "max" nodes; new tile spawns (2 with 90%, 4 with 10%) are "chance" nodes. Positions are scored on monotonicity, smoothness, free cells and keeping the largest tile in a corner. Search depth adapts to the number of free cells and is capped by a time budget so the overlay stays responsive.
+4. **Overlay** (`overlay.py`): a small arrow shows the suggested move.
+5. **Autoplay** (`autoplay.py`): sends arrow keys for browser versions, or simulates swipes with the mouse for the mirrored phone.
+
+## Installation
+
+### Python dependencies
 ```
 pip install -r requirements.txt
 ```
-Якщо оновлюєш проєкт після попередньої версії — обов'язково запусти цю
-команду ще раз, бо в `requirements.txt` могли додатись нові пакети
-(наприклад `pyautogui`, `keyboard` для автогри).
 
-### 1.2 Tesseract OCR (окрема програма, не встановлюється через pip)
-1. Завантаж інсталятор для Windows: https://github.com/UB-Mannheim/tesseract/wiki
-2. Встанови (типово в `C:\Program Files\Tesseract-OCR\`).
-3. Відкрий `config.py` і за потреби виправ шлях у `TESSERACT_CMD` на той,
-   куди реально встановився tesseract.exe.
+### Tesseract OCR (separate program, not installed via pip)
+1. Download the Windows installer: https://github.com/UB-Mannheim/tesseract/wiki
+2. Install it (default: `C:\Program Files\Tesseract-OCR\`).
+3. If needed, update `TESSERACT_CMD` in `config.py` to the actual path of `tesseract.exe`.
 
-## 2. Калібрування (робиться один раз, повторити якщо змінюєш розмір/позицію вікна)
+## Calibration (once, or whenever the window size or position changes)
 
-1. Відкрий "Зв'язок зі смартфоном" на весь екран (або хоч так, щоб гра була
-   добре видна) і зайди в саму гру 2048.
-2. Запусти:
+1. Open the game so the board is clearly visible.
+2. Run:
    ```
    python calibrate.py
    ```
-3. У вікні, що відкриється, виділи мишкою РІВНО ігрове поле 4×4 — від
-   зовнішнього краю верхньої-лівої клітинки до зовнішнього краю
-   нижньої-правої клітинки. Не захоплюй напис "Рахунок/Рекорд" чи кнопки.
-4. Натисни ENTER. Область збережеться у `region_config.json`.
+3. Select exactly the 4×4 board with the mouse, from the outer edge of the top-left cell to the outer edge of the bottom-right cell. Do not include the score or buttons.
+4. Press ENTER. The region is saved to `region_config.json`.
 
-## 3. Запуск
+## Running
 
 ```
 python main.py
 ```
 
-Праворуч від поля з'явиться маленьке чорне віконце зі стрілкою — це
-рекомендований хід. Воно завжди зверху; якщо заважає, можна перетягнути
-його за стрілку мишкою.
+A small black overlay with an arrow appears next to the board. It stays on top and can be dragged.
 
-**Кольори стрілки:**
-- 🟢 зелений — хід порахований, можна тиснути
-- 🔴 червоний — поле щойно змінилось, рахується наступний хід (з'являється
-  одразу після твого натискання)
-- ⚪ сірий/`?` — поле не вдається розпізнати
+**Arrow colours:**
+- 🟢 green: move calculated, ready to play
+- 🔴 red: the board just changed, the next move is being calculated
+- ⚪ grey / `?`: the board cannot be recognized
 
-**Автогра (F9):** натисни F9 (працює глобально, навіть якщо активне вікно
-"Зв'язок зі смартфоном") — програма сама почне натискати стрілки замість
-тебе. Ще раз F9 — вимкнути. Внизу віконця-підказки видно поточний стан
-(`AUTO: ON` / `AUTO: off`).
+**Autoplay (F9):** press F9 (works globally) to let the program play; press F9 again to stop. The overlay shows `AUTO: ON` / `AUTO: off`.
 
-⚠️ **Важливо про автогру:** гра реагує лише на свайпи (дотики), тому
-автогра симулює свайп **мишкою** прямо по області ігрового поля на екрані.
-Використовується низькорівневий Windows API (`SetCursorPos` + `mouse_event`)
-замість `pyautogui`/`SendInput`, і перед кожним свайпом програма намагається
-явно перевести фокус на вікно "Зв'язок зі смартфоном" (шукає його за
-заголовком). Деякі сучасні (UWP) застосунки по-різному обробляють різні
-джерела синтетичного вводу, тому це може спрацювати краще за попередній
-варіант — але гарантії немає. **Перевір на кількох ходах**, перш ніж
-довіряти автогрі цілу партію.
+- For browser versions that accept arrow keys (for example play2048.co), set `AUTOPLAY_INPUT_MODE = "keys"` in `config.py`.
+- For the mirrored phone, the game only reacts to swipes, so autoplay simulates mouse swipes over the board using the low-level Windows API (`SetCursorPos` + `mouse_event`) and focuses the Phone Link window first. If your mirroring window has a different title, add it to `WINDOW_TITLE_KEYWORDS` in `autoplay.py`. Check a few moves before trusting a whole game to autoplay.
 
-Якщо заголовок вікна дзеркалення телефону в тебе інший і програма пише
-"не знайшов вікно дзеркалення" — відкрий `autoplay.py` і додай свій варіант
-заголовка у список `WINDOW_TITLE_KEYWORDS`.
+**Emergency stop:** move the mouse to the top-left corner of the screen (the built-in `pyautogui` failsafe). Stop the program with Ctrl+C in the console.
 
-Якщо і це не спрацює — є надійніший, але складніший шлях: керування напряму
-через ADB (Android Debug Bridge), в обхід дзеркалення повністю. Це вимагає
-увімкнути USB-відлагодження на телефоні. Скажи, якщо захочеш спробувати —
-зроблю окрему версію під це.
+## Temporary occlusions
 
-Аварійна зупинка автогри: різко відведи курсор миші у крайній верхній лівий
-кут екрана — це вбудований запобіжник `pyautogui`, який миттєво зупиняє всі
-подальші натискання.
+The program remembers the last successfully recognized value of each cell. If a cell suddenly becomes unreadable (a finger, the cursor, a cat's paw), it keeps the last known value instead of marking the board as unknown, and reads the real value again as soon as the cell is clear.
 
-Зупинити програму повністю: Ctrl+C у консолі.
+## Tile spawn statistics
 
-## 4. Лапка кота та інші тимчасові перекриття цифр
-
-Програма запам'ятовує останнє успішно розпізнане значення кожної клітинки
-окремо. Якщо якась клітинка раптом стає нечитабельною (лапка кота, палець,
-курсор і т.п.), вона просто підставляє останнє відоме значення замість
-того, щоб позначати поле як "невідоме". Щойно перешкода зникає — наступне
-зчитування знову бере реальне значення з екрана. Це працює автоматично,
-нічого додатково налаштовувати не треба.
-
-## 5. Перегляд статистики появи плиток
-
-Після кількох партій:
+After a few games:
 ```
 python spawn_logger.py
 ```
-Покаже частку появи 2 проти 4 та розподіл по клітинках поля.
-Файл із сирими даними: `spawn_log.csv`.
+This shows the share of 2s versus 4s and their distribution across the board. Raw data: `spawn_log.csv`.
 
-## 6. Якщо щось розпізнається неправильно
+## Troubleshooting
 
-- **Порожні клітинки визначаються як заповнені (або навпаки)**: відкрий
-  `board_reader.py`, підбери `EMPTY_WHITE_RATIO_THRESHOLD` (більше значення =
-  менш чутливо до дрібних білих артефактів на фоні клітинки).
-- **Цифри розпізнаються з помилками**: переконайся, що область у
-  `calibrate.py` виділена точно по краях поля (без зайвих пікселів рамки
-  застосунку), і що дзеркалення телефону не масштабує зображення дуже дрібно
-  — чим більший розмір вікна, тим краще OCR.
-- **Підказка "не бачу поле чітко" не зникає**: перевір папку `debug_cells/`
-  — там зберігаються картинки конкретних клітинок, які не вдалось
-  розпізнати (оригінал + підготовлене для OCR зображення).
+- **Empty cells detected as filled (or the opposite):** tune `EMPTY_WHITE_RATIO_THRESHOLD` in `board_reader.py` (a higher value is less sensitive to small light artifacts).
+- **Digits misread:** make sure the calibrated region matches the board edges exactly and the game window is large enough; bigger cells read better.
+- **"Board not clear" does not go away:** check `debug_cells/`, where unrecognized cells are saved (original and the image prepared for OCR).
 
-## 7. Важливий нюант щодо "передбачення появи плиток"
+## A note on "predicting" new tiles
 
-У класичній грі 2048 нова плитка (90% шанс "2", 10% шанс "4") з'являється
-на випадковій вільній клітинці через генератор псевдовипадкових чисел —
-це не піддається передбаченню лише на основі спостереження ходів іззовні
-(немає доступу до внутрішнього стану/seed генератора гри). Логування в
-цьому проєкті дозволяє перевірити реальний розподіл (чи справді 90/10,
-чи рівномірний по позиціях), але сам алгоритм вибору ходу (`solver.py`)
-свідомо базується на Expectimax, який враховує ці ймовірності напряму —
-це найефективніший практичний підхід для гри в 2048.
+In classic 2048 a new tile (2 with 90% probability, 4 with 10%) appears on a random free cell, chosen by the game's pseudo-random generator. It cannot be predicted from the outside without access to the generator's internal state. The spawn log lets you check the real distribution, while the solver deliberately uses Expectimax, which accounts for these probabilities directly.
+
+## Tech
+
+Python · OpenCV · Tesseract OCR (pytesseract) · mss · NumPy · pyautogui · keyboard
